@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Time Emotion Detector</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+    font-family: 'Inter', sans-serif;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    min-height: 100vh;
+
+    /* background image */
+    background-image: url('https://res.cloudinary.com/dyxq6mn93/image/upload/v1755076619/Untitled_design_1_-_Copy_wncznv.png');
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+
+    color: #f3f4f6;
+    margin: 0;
+}
+        /* Style for the video and canvas container */
+        #video-container {
+    position: relative;
+    width: 100%;
+    max-width: 960px;
+    aspect-ratio: 16 / 9;
+    border-radius: 0.75rem;
+    overflow: hidden;
+    box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1),
+                0 8px 10px -6px rgb(0 0 0 / 0.1);
+
+    background-image: url('https://res.cloudinary.com/dyxq6mn93/image/upload/v1755077943/compressed_facial-recognition-collage-concept_-_Copy_2_dlaa03.jpg');
+    background-size: cover;     /* Ensures image fills container */
+    background-position: center; /* Keeps focus on center */
+    background-repeat: no-repeat;
+}
+
+        video, canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        /* Flip the video horizontally for a mirror-like effect */
+        video {
+            transform: scaleX(-1);
+        }
+        /* Message box for loading and errors */
+        #message-box {
+            position: fixed;
+            top: 2rem;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 0.75rem 1.5rem;
+            background-color: #4f46e5; /* bg-indigo-600 */
+            color: white;
+            border-radius: 0.5rem;
+            font-weight: 500;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            z-index: 100;
+            opacity: 0;
+            transition: opacity 0.3s ease-in-out;
+        }
+    </style>
+</head>
+
+
+    <div class="text-center mb-6">
+        <h1 class="text-3xl sm:text-4xl font-bold text-white">Live Emotion Detector</h1>
+        <p class="text-gray-400 mt-2">Look into your webcam to see the magic happen!</p>
+    </div>
+    
+    <div id="message-box">Loading models... Please wait.</div>
+
+    <div id="video-container" class="bg-gray-800 flex items-center justify-center">
+        <video id="video" autoplay muted playsinline></video>
+        <canvas id="canvas"></canvas>
+    </div>
+
+    <div class="mt-6">
+        <button id="startButton" class="hidden bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg transition-transform transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+            Start Camera
+        </button>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+    
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const messageBox = document.getElementById('message-box');
+        const startButton = document.getElementById('startButton');
+        const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
+
+        // Map emotions to emojis
+        const emotionEmojis = {
+            neutral: '😐',
+            happy: '😊',
+            sad: '😢',
+            angry: '😠',
+            fearful: '😨',
+            disgusted: '🤢',
+            surprised: '😮'
+        };
+
+        // Function to show messages to the user
+        function showMessage(text, duration = 4000) {
+            messageBox.textContent = text;
+            messageBox.style.opacity = '1';
+            setTimeout(() => {
+                messageBox.style.opacity = '0';
+            }, duration);
+        }
+
+        // --- 1. LOAD THE MODELS ---
+        async function loadModels() {
+            showMessage('Loading models... This may take a moment.');
+            try {
+                // Using SsdMobilenetv1 for faster detection
+                await Promise.all([
+                    faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL),
+                    faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+                    faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
+                    faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL)
+                ]);
+                showMessage('Models loaded! Click "Start Camera" to begin.');
+                startButton.classList.remove('hidden');
+            } catch (error) {
+                console.error("Error loading models:", error);
+                showMessage('Error loading models. Please check the console.', 5000);
+            }
+        }
+
+        // --- 2. START THE WEBCAM ---
+        async function startWebcam() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: 'user' } 
+                });
+                video.srcObject = stream;
+            } catch (err) {
+                console.error("Error accessing webcam:", err);
+                showMessage('Webcam access denied. Please allow camera access and refresh.', 5000);
+            }
+        }
+        
+        startButton.addEventListener('click', async () => {
+            await startWebcam();
+            startButton.classList.add('hidden');
+        });
+
+        // --- 3. DETECT EMOTIONS IN REAL-TIME ---
+        video.addEventListener('play', () => {
+            const displaySize = { width: video.clientWidth, height: video.clientHeight };
+            faceapi.matchDimensions(canvas, displaySize);
+            
+            // Use SsdMobilenetv1Options for detection
+            const detectionOptions = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 });
+            
+            setInterval(async () => {
+                const detections = await faceapi.detectAllFaces(video, detectionOptions)
+                    .withFaceLandmarks()
+                    .withFaceExpressions();
+
+                const ctx = canvas.getContext('2d');
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                if (!detections.length) {
+                    return;
+                }
+                
+                const resizedDetections = faceapi.resizeResults(detections, displaySize);
+                
+                resizedDetections.forEach(detection => {
+                    const box = detection.detection.box;
+                    const expressions = detection.expressions;
+                    
+                    if (expressions && Object.keys(expressions).length > 0) {
+                        const dominantEmotion = Object.keys(expressions).reduce((a, b) => expressions[a] > expressions[b] ? a : b);
+                        const emoji = emotionEmojis[dominantEmotion] || '🤔';
+                        const score = expressions[dominantEmotion];
+                        const label = `${emoji} ${dominantEmotion} (${Math.round(score * 100)}%)`;
+
+                        new faceapi.draw.DrawBox(box, { 
+                            label: label,
+                            boxColor: 'rgba(0, 255, 0, 1)'
+                        }).draw(canvas);
+                    } else {
+                        faceapi.draw.drawDetections(canvas, detection);
+                    }
+                });
+                
+            }, 150); // Adjusted interval for better responsiveness
+        });
+
+        // --- INITIALIZE THE APPLICATION ---
+        loadModels();
+
+    </script>
+</body>
+</html>
